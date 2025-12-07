@@ -1,67 +1,65 @@
-// Basic WhatsApp Cloud API bot for UGPM
+// UGPM WhatsApp Cloud API Bot
 
-const express = require("express");
-const bodyParser = require("body-parser");
-const axios = require("axios");
-require("dotenv").config();
+import express from "express";
+import bodyParser from "body-parser";
+import axios from "axios";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 app.use(bodyParser.json());
 
-// Your webhook verification
+// Webhook verification
 app.get("/webhook", (req, res) => {
-  const verify_token = "ugpmhelptoken"; // must match Meta verify token
-
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode && token === verify_token) {
-    console.log("Webhook verified");
+  if (mode === "subscribe" && token === process.env.VERIFY_TOKEN) {
+    console.log("Webhook verified successfully!");
     return res.status(200).send(challenge);
   }
+
   return res.sendStatus(403);
 });
 
-// Handle incoming messages
+// Webhook message receiver
 app.post("/webhook", async (req, res) => {
   try {
-    const message = req.body.entry?.[0]?.changes?.[0]?.value;
+    const entry = req.body.entry?.[0]?.changes?.[0]?.value;
 
-    if (message?.messages) {
-      const phone_number_id = message.metadata.phone_number_id;
-      const from = message.messages[0].from;
-      const text = message.messages[0].text?.body || "";
+    if (entry?.messages) {
+      const from = entry.messages[0].from;
+      const text = entry.messages[0].text?.body || "";
+      const phoneNumberId = process.env.PHONE_NUMBER_ID;
 
       console.log("Incoming message:", text);
 
-      await sendReply(phone_number_id, from, "UGPM Help Bot: I received your message!");
+      // Reply
+      await axios.post(
+        `https://graph.facebook.com/v17.0/${phoneNumberId}/messages`,
+        {
+          messaging_product: "whatsapp",
+          to: from,
+          text: { body: "UGPM Help Bot received your message: " + text }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
     }
 
     res.sendStatus(200);
-  } catch (err) {
-    console.error("Error handling message:", err);
+  } catch (error) {
+    console.error("Error handling message:", error.response?.data || error);
     res.sendStatus(500);
   }
 });
 
-// Function to send a reply
-async function sendReply(phone_number_id, to, msg) {
-  await axios({
-    method: "POST",
-    url: `https://graph.facebook.com/v17.0/${phone_number_id}/messages`,
-    headers: {
-      Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-      "Content-Type": "application/json"
-    },
-    data: {
-      messaging_product: "whatsapp",
-      to,
-      text: { body: msg }
-    }
-  });
-}
-
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`UGPM Bot running on port ${PORT}`));
+app.listen(PORT, () => console.log(
